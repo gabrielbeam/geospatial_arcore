@@ -170,11 +170,6 @@ class GeoRenderer(val activity: GeoActivity) :
                 longitude = cameraGeospatialPose.longitude,
                 heading = cameraGeospatialPose.heading
             )
-            activity.view.mapView?.updateMapPosition(
-                latitude = cameraGeospatialPose.latitude,
-                longitude = cameraGeospatialPose.longitude,
-                heading = cameraGeospatialPose.heading
-            )
             if (cameraGeospatialPose.horizontalAccuracy < 3.0) {
                 val intent = Intent().apply {
                     putExtra(GeoActivity.RESULT_LATITUDE, cameraGeospatialPose.latitude)
