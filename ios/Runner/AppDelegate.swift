@@ -1,5 +1,6 @@
 import UIKit
 import Flutter
+import SwiftUI
 
 @UIApplicationMain
 @objc class AppDelegate: FlutterAppDelegate, GeospatialARCoreApi {
@@ -14,23 +15,25 @@ import Flutter
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
-  override func startGeospatialARCoreSession(completion: @escaping (Coordinate) -> Void) {
-    DispatchQueue.main.async {
-        let contentView = ContentView(onCoordinateSelected: { coordinate in
-                // Once coordinate is selected, call the completion handler
-                completion(coordinate)
+    func startGeospatialARCoreSession(completion: @escaping (Result<Coordinate, Error>) -> Void) {
+            // Switch to the main thread since UI updates must be done on the main queue
+        DispatchQueue.main.async {
+            // Create a SwiftUI ContentView and handle the coordinate selection
+            let contentView = ContentView(onCoordinateSelected: { coordinate in
+                // Once coordinate is selected, pass it back using the completion handler
+                completion(.success(coordinate))
                 
-                // Dismiss the UIHostingController (if needed)
-                if let rootViewController = UIApplication.shared.windows.first?.rootViewController {
+                // Dismiss the presented SwiftUI view (if necessary)
+                if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                   let rootViewController = scene.windows.first?.rootViewController {
                     rootViewController.dismiss(animated: true, completion: nil)
                 }
             })
-            
-            // Create and present UIHostingController
             let hostingController = UIHostingController(rootView: contentView)
-            if let rootViewController = UIApplication.shared.windows.first?.rootViewController {
+            if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let rootViewController = scene.windows.first?.rootViewController {
                 rootViewController.present(hostingController, animated: true, completion: nil)
             }
-    }
+        }
   }
 }
