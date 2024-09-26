@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'geospatial_arcore.dart';
 
 void main() {
-  runApp(MyApp());
+  runApp(const MyApp());
 }
 
 class MyApp extends StatefulWidget {
@@ -29,7 +29,7 @@ class _MyAppState extends State<MyApp> {
         altitude = coordinate.altitude;
       });
     } catch (e) {
-      print("Error starting Geospatial ARCore session: $e");
+      print('Error starting geospatial ARCore session: $e');
     }
   }
 
