@@ -18,8 +18,10 @@ import SwiftUI
 
 /// View for testing Geospatial localization, Streetscape Geometry and Geospatial anchors.
 struct ContentView: View {
+  @Environment(\.presentationMode) var presentationMode
   @StateObject var manager = GeospatialManager()
-  @State private var coordinate: Coordinate = Coordinate(latitude: 0.0, longitude: 0.0, altitude: 0.0)
+    
+    var onCoordinateSelected: (Coordinate) -> Void
   
   private let font = Font.system(size: 14)
   private let boldFont = Font.system(size: 14, weight: .bold)
@@ -28,8 +30,6 @@ struct ContentView: View {
     (.terrain, "Terrain"),
     (.rooftop, "Rooftop"),
   ]
-
-  var onCoordinateSelected: ((Coordinate) -> Void)?
   
   var body: some View {
     ZStack {
@@ -50,11 +50,6 @@ struct ContentView: View {
         }
         .frame(height: 140)
         Spacer()
-        if manager.tapScreenVisible {
-          Text("TAP ON SCREEN TO CREATE ANCHOR")
-            .font(boldFont)
-            .foregroundStyle(.white)
-        }
         ZStack(alignment: .leading) {
           Rectangle()
             .opacity(0.5)
@@ -111,7 +106,13 @@ struct ContentView: View {
         .frame(height: 160)
       }
     }
-    .alert("AR in the real world", isPresented: $manager.showPrivacyNotice) {
+    .onAppear {
+        manager.onCoordinateUpdate = { coordinate in
+            // Do something with the coordinate here
+            onCoordinateSelected(coordinate)
+            presentationMode.wrappedValue.dismiss()
+        }
+    }    .alert("AR in the real world", isPresented: $manager.showPrivacyNotice) {
       Button {
         manager.acceptPrivacyNotice()
       } label: {
@@ -135,5 +136,8 @@ struct ContentView: View {
 }
 
 #Preview {
-  ContentView()
+    ContentView(onCoordinateSelected: { _ in
+        // You can provide a mock action here for the preview
+        print("Coordinate selected")
+    })
 }

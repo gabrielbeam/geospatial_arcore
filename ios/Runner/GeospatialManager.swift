@@ -72,6 +72,16 @@ class GeospatialManager: NSObject, ObservableObject, CLLocationManagerDelegate {
       }
     }
   }
+    
+    @Published var coordinate: Coordinate? {
+       didSet {
+           // Whenever the coordinate is updated, trigger the callback
+           if let coordinate = coordinate {
+               onCoordinateUpdate?(coordinate)
+           }
+       }
+   }
+    var onCoordinateUpdate: ((Coordinate) -> Void)?
 
   let arView = ARView(frame: .zero, cameraMode: .ar, automaticallyConfigureSession: false)
   private var locationManager: CLLocationManager?
@@ -399,10 +409,11 @@ class GeospatialManager: NSObject, ObservableObject, CLLocationManagerDelegate {
       && geospatialTransform.orientationYawAccuracy < Constants.orientationYawAccuracyLowThreshold
     {
       highAccuracy = true
-      if !addedSavedAnchors {
-        addSavedAnchors()
-        addedSavedAnchors = true
-      }
+      //disable anchor
+      // if !addedSavedAnchors {
+      //   addSavedAnchors()
+      //   addedSavedAnchors = true
+      // }
     } else if now.timeIntervalSince(lastStartDate) >= Constants.localizationFailureTime {
       localizationFailed = true
     }
@@ -439,6 +450,10 @@ class GeospatialManager: NSObject, ObservableObject, CLLocationManagerDelegate {
       trackingLabel = "Not tracking."
       return
     }
+      
+      if geospatialTransform.horizontalAccuracy < 3 {
+          self.coordinate = Coordinate(latitude: geospatialTransform.coordinate.latitude, longitude: geospatialTransform.coordinate.longitude, altitude: geospatialTransform.altitude)
+      }
 
     trackingLabel = String(
       format:
@@ -490,7 +505,6 @@ class GeospatialManager: NSObject, ObservableObject, CLLocationManagerDelegate {
 
     clearAnchorsVisible = (anchorCount > 0)
     tapScreenVisible = (anchorCount < Constants.maxAnchorCount)
-    anchorModeVisible = true
   }
 
   /// Feeds the latest `ARFrame` to the `GARSession` and updates the UI state.

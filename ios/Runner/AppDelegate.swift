@@ -18,22 +18,22 @@ import SwiftUI
     func startGeospatialARCoreSession(completion: @escaping (Result<Coordinate, Error>) -> Void) {
             // Switch to the main thread since UI updates must be done on the main queue
         DispatchQueue.main.async {
-            // Create a SwiftUI ContentView and handle the coordinate selection
-            let contentView = ContentView(onCoordinateSelected: { coordinate in
-                // Once coordinate is selected, pass it back using the completion handler
-                completion(.success(coordinate))
-                
-                // Dismiss the presented SwiftUI view (if necessary)
-                if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                   let rootViewController = scene.windows.first?.rootViewController {
-                    rootViewController.dismiss(animated: true, completion: nil)
+            // Create the UIHostingController
+            let hostingController = UIHostingController(rootView: ContentView(
+                onCoordinateSelected: { coordinate in
+                    completion(.success(coordinate))
                 }
-            })
-            let hostingController = UIHostingController(rootView: contentView)
+            ))
+
+            // Set the modal presentation style to full screen
+            hostingController.modalPresentationStyle = .fullScreen
+            
+            // Present the hosting controller
             if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-               let rootViewController = scene.windows.first?.rootViewController {
+               let window = scene.windows.first,
+               let rootViewController = window.rootViewController {
                 rootViewController.present(hostingController, animated: true, completion: nil)
             }
         }
-  }
+    }
 }
