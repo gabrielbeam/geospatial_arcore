@@ -22,7 +22,9 @@ class _MyAppState extends State<MyApp> {
 
   Future<void> _startGeospatialSession() async {
     try {
-      final coordinate = await _geospatialApi.startGeospatialARCoreSession();
+      String apiKey = 'API-KEY-HERE';
+
+      final coordinate = await _geospatialApi.startGeospatialARCoreSession(apiKey, 10, 10, true);
       setState(() {
         latitude = coordinate.latitude;
         longitude = coordinate.longitude;

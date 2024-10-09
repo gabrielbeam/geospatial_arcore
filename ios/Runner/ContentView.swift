@@ -18,94 +18,89 @@ import SwiftUI
 
 /// View for testing Geospatial localization, Streetscape Geometry and Geospatial anchors.
 struct ContentView: View {
-  @Environment(\.presentationMode) var presentationMode
-  @StateObject var manager = GeospatialManager()
-    
+    var apiKey: String
+    var horizontalAccuracyLowerLimitInMeters: Int64
+    var cameraTimeoutInSeconds: Int64
+    var showAdditionalDebugInfo: Bool
     var onCoordinateSelected: (Coordinate) -> Void
+    
+    @StateObject var manager: GeospatialManager
+    @Environment(\.presentationMode) var presentationMode
+    
+    init(apiKey: String,
+         horizontalAccuracyLowerLimitInMeters: Int64,
+         cameraTimeoutInSeconds: Int64,
+         showAdditionalDebugInfo: Bool,
+         onCoordinateSelected: @escaping (Coordinate) -> Void) {
+        self.apiKey = apiKey
+        self.horizontalAccuracyLowerLimitInMeters = horizontalAccuracyLowerLimitInMeters
+        self.cameraTimeoutInSeconds = cameraTimeoutInSeconds
+        self.showAdditionalDebugInfo = showAdditionalDebugInfo
+        self.onCoordinateSelected = onCoordinateSelected
+        _manager = StateObject(wrappedValue: GeospatialManager(apiKey: apiKey,
+                                                               horizontalAccuracyLowerLimitInMeters: horizontalAccuracyLowerLimitInMeters,
+                                                               cameraTimeoutInSeconds: cameraTimeoutInSeconds))
+    }
+    
   
-  private let font = Font.system(size: 14)
-  private let boldFont = Font.system(size: 14, weight: .bold)
-  private let anchorTypes: [(GeospatialManager.AnchorType, String)] = [
-    (.geospatial, "Geospatial"),
-    (.terrain, "Terrain"),
-    (.rooftop, "Rooftop"),
-  ]
+    private let font = Font.system(size: 14)
+    private let boldFont = Font.system(size: 14, weight: .bold)
   
   var body: some View {
-    ZStack {
-      ARViewContainer(manager: manager)
-        .ignoresSafeArea()
-        .onTapGesture {
-          manager.tapPoint($0)
-        }
       VStack {
-        ZStack(alignment: .leading) {
-          Rectangle()
-            .opacity(0.5)
-          Text(manager.trackingLabel)
-            .font(font)
-            .foregroundStyle(.white)
-            .lineLimit(6)
-            .multilineTextAlignment(.leading)
-        }
-        .frame(height: 140)
-        Spacer()
-        ZStack(alignment: .leading) {
-          Rectangle()
-            .opacity(0.5)
-          Text(manager.statusLabel)
-            .font(font)
-            .foregroundStyle(.white)
-            .lineLimit(2)
-            .multilineTextAlignment(.leading)
-          if manager.clearAnchorsVisible {
-            VStack {
-              Spacer()
+          HStack {
               Button {
-                manager.clearAllAnchors()
+                  onCoordinateSelected(Coordinate(latitude:0,longitude: 0, altitude: 0))
+                  presentationMode.wrappedValue.dismiss()
               } label: {
-                Text("CLEAR ALL ANCHORS")
-                  .font(boldFont)
+                  Image(systemName: "xmark")
+                      .foregroundColor(Color(.label))
+                      .imageScale(/*@START_MENU_TOKEN@*/.medium/*@END_MENU_TOKEN@*/)
+                      .frame(width:44, height: 20)
               }
-            }
+              Text( "Scan surrounding")
+                  .font(.system(size: 20))
+                  .fontWeight(.semibold)
+                  .frame(maxWidth: .infinity, alignment: .leading)
           }
-          VStack {
-            Spacer()
-            Toggle(isOn: $manager.streetscapeGeometryEnabled) {
-              Text("SHOW GEOMETRY")
-                .font(boldFont)
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-            }
-          }
-          if manager.anchorModeVisible {
-            VStack {
-              HStack {
-                Spacer()
-                Menu {
-                  Picker(selection: $manager.anchorType) {
-                    ForEach(anchorTypes, id: \.self.0) { type in
-                      Text(type.1)
-                    }
-                  } label: {
+          .padding([.top, .leading, .trailing]) // Default padding for top, leading, and trailing
+          ZStack {
+              ARViewContainer(manager: manager, cameraTimeoutInSeconds: cameraTimeoutInSeconds)
+                  .ignoresSafeArea()
+              VStack {
+                  if (showAdditionalDebugInfo) {
+                      ZStack(alignment: .leading) {
+                          Rectangle()
+                              .opacity(0.5)
+                          Text(manager.trackingLabel)
+                              .font(font)
+                              .foregroundStyle(.white)
+                              .lineLimit(6)
+                              .multilineTextAlignment(.leading)
+                      }
+                      .frame(height: 140)
+                      Spacer()
                   }
-                } label: {
-                  HStack(spacing: 0) {
-                    Image(uiImage: UIImage(systemName: "gearshape.fill")!)
-                      .renderingMode(.template)
-                      .foregroundStyle(.blue)
-                    Text("ANCHOR SETTINGS")
-                      .font(boldFont)
+                  Spacer()
+                  ZStack {
+                      Rectangle()
+                          .fill(Color(UIColor(red: 0x1D / 255.0, green: 0x0E / 255.0, blue: 0x40 / 255.0, alpha: 0.9)))
+                          .frame(maxWidth: .infinity)
+                          .frame(height: 60)
+                          .cornerRadius(5)
+                          .padding(.horizontal, 20)
+                      Text("Please point your camera towards nearby buildings or road signs.")
+                          .font(font)
+                          .foregroundStyle(.white)
+                          .lineLimit(2)
+                          .multilineTextAlignment(.center)
+                          .padding()
                   }
-                }
+                  .padding(.bottom, 100)
               }
-              Spacer()
-            }
+              
           }
-        }
-        .frame(height: 160)
       }
-    }
     .onAppear {
         manager.onCoordinateUpdate = { coordinate in
             // Do something with the coordinate here
@@ -133,11 +128,4 @@ struct ContentView: View {
           + "location. Location data may not be as accurate.")
     }
   }
-}
-
-#Preview {
-    ContentView(onCoordinateSelected: { _ in
-        // You can provide a mock action here for the preview
-        print("Coordinate selected")
-    })
 }

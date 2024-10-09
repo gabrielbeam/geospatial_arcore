@@ -92,7 +92,7 @@ private object GeospatialARCoreApiCodec : StandardMessageCodec() {
 
 /** Generated interface from Pigeon that represents a handler of messages from Flutter. */
 interface GeospatialARCoreApi {
-  fun startGeospatialARCoreSession(callback: (Result<Coordinate>) -> Unit)
+  fun startGeospatialARCoreSession(apiKey: String, horizontalAccuracyLowerLimitInMeters: Long, cameraTimeoutInSeconds: Long, showAdditionalDebugInfo: Boolean, callback: (Result<Coordinate>) -> Unit)
 
   companion object {
     /** The codec used by GeospatialARCoreApi. */
@@ -105,8 +105,13 @@ interface GeospatialARCoreApi {
       run {
         val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.geospatial_arcore.GeospatialARCoreApi.startGeospatialARCoreSession", codec)
         if (api != null) {
-          channel.setMessageHandler { _, reply ->
-            api.startGeospatialARCoreSession() { result: Result<Coordinate> ->
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val apiKeyArg = args[0] as String
+            val horizontalAccuracyLowerLimitInMetersArg = args[1].let { if (it is Int) it.toLong() else it as Long }
+            val cameraTimeoutInSecondsArg = args[2].let { if (it is Int) it.toLong() else it as Long }
+            val showAdditionalDebugInfoArg = args[3] as Boolean
+            api.startGeospatialARCoreSession(apiKeyArg, horizontalAccuracyLowerLimitInMetersArg, cameraTimeoutInSecondsArg, showAdditionalDebugInfoArg) { result: Result<Coordinate> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(wrapError(error))

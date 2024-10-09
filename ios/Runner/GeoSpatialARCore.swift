@@ -98,7 +98,7 @@ class GeospatialARCoreApiCodec: FlutterStandardMessageCodec {
 
 /// Generated protocol from Pigeon that represents a handler of messages from Flutter.
 protocol GeospatialARCoreApi {
-  func startGeospatialARCoreSession(completion: @escaping (Result<Coordinate, Error>) -> Void)
+  func startGeospatialARCoreSession(apiKey: String, horizontalAccuracyLowerLimitInMeters: Int64, cameraTimeoutInSeconds: Int64, showAdditionalDebugInfo: Bool, completion: @escaping (Result<Coordinate, Error>) -> Void)
 }
 
 /// Generated setup class from Pigeon to handle messages through the `binaryMessenger`.
@@ -109,8 +109,13 @@ class GeospatialARCoreApiSetup {
   static func setUp(binaryMessenger: FlutterBinaryMessenger, api: GeospatialARCoreApi?) {
     let startGeospatialARCoreSessionChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.geospatial_arcore.GeospatialARCoreApi.startGeospatialARCoreSession", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {
-      startGeospatialARCoreSessionChannel.setMessageHandler { _, reply in
-        api.startGeospatialARCoreSession() { result in
+      startGeospatialARCoreSessionChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let apiKeyArg = args[0] as! String
+        let horizontalAccuracyLowerLimitInMetersArg = args[1] is Int64 ? args[1] as! Int64 : Int64(args[1] as! Int32)
+        let cameraTimeoutInSecondsArg = args[2] is Int64 ? args[2] as! Int64 : Int64(args[2] as! Int32)
+        let showAdditionalDebugInfoArg = args[3] as! Bool
+        api.startGeospatialARCoreSession(apiKey: apiKeyArg, horizontalAccuracyLowerLimitInMeters: horizontalAccuracyLowerLimitInMetersArg, cameraTimeoutInSeconds: cameraTimeoutInSecondsArg, showAdditionalDebugInfo: showAdditionalDebugInfoArg) { result in
           switch result {
             case .success(let res):
               reply(wrapResult(res))

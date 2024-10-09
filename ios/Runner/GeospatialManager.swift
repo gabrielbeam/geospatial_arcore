@@ -24,16 +24,13 @@ import simd
 
 /// Model object for using the Geospatial API and placing Geospatial anchors.
 class GeospatialManager: NSObject, ObservableObject, CLLocationManagerDelegate {
+    @Published var apiKey: String
+    @Published var horizontalAccuracyLowerLimitInMeters: Int64
+    @Published var cameraTimeoutInSeconds: Int64
+    var onCoordinateUpdate: ((Coordinate) -> Void)?
   /// Different types of Geospatial anchors you can place with the app.
-  enum AnchorType: Int {
-    case geospatial = 0
-    case terrain = 1
-    case rooftop = 2
-  }
 
   private enum Constants {
-    /// Fill in your own API Key here.
-    static let apiKey = "API_KEY"
     /// User defaults key for storing privacy notice acceptance.
     static let privacyNoticeUserDefaultsKey = "privacy_notice_acknowledged"
     /// User defaults key for storing saved anchors.
@@ -59,19 +56,9 @@ class GeospatialManager: NSObject, ObservableObject, CLLocationManagerDelegate {
   @Published var statusLabel = ""
   @Published var tapScreenVisible = false
   @Published var clearAnchorsVisible = false
-  @Published var anchorModeVisible = false
   @Published var showPrivacyNotice = !UserDefaults.standard.bool(
     forKey: Constants.privacyNoticeUserDefaultsKey)
   @Published var showVPSUnavailableNotice = false
-  @Published var anchorType = AnchorType.geospatial
-
-  @Published var streetscapeGeometryEnabled = true {
-    willSet {
-      if newValue != streetscapeGeometryEnabled {
-        toggleStreetscapeGeometry(enabled: newValue)
-      }
-    }
-  }
     
     @Published var coordinate: Coordinate? {
        didSet {
@@ -81,7 +68,6 @@ class GeospatialManager: NSObject, ObservableObject, CLLocationManagerDelegate {
            }
        }
    }
-    var onCoordinateUpdate: ((Coordinate) -> Void)?
 
   let arView = ARView(frame: .zero, cameraMode: .ar, automaticallyConfigureSession: false)
   private var locationManager: CLLocationManager?
@@ -89,7 +75,6 @@ class GeospatialManager: NSObject, ObservableObject, CLLocationManagerDelegate {
 
   private var pendingFutures: [UUID: GARFuture] = [:]
   private var anchors: [GARAnchor] = []
-  var anchorTypes: [UUID: AnchorType] = [:]
   var earthTracking = false
   var highAccuracy = false
   private var addedSavedAnchors = false
@@ -97,284 +82,24 @@ class GeospatialManager: NSObject, ObservableObject, CLLocationManagerDelegate {
   private var lastStartDate: Date? = nil
   private var resolveErrorMessage: String? = nil
 
-  override init() {
-    super.init()
-    if !showPrivacyNotice {
-      setupARSession()
-    }
-  }
+    init(apiKey: String,
+        horizontalAccuracyLowerLimitInMeters: Int64,
+        cameraTimeoutInSeconds: Int64) {
+        
+        self.apiKey = apiKey
+        self.horizontalAccuracyLowerLimitInMeters = horizontalAccuracyLowerLimitInMeters
+        self.cameraTimeoutInSeconds = cameraTimeoutInSeconds
+        
+        super.init()
+        
+        self.showPrivacyNotice = showPrivacyNotice
 
-  private func toggleStreetscapeGeometry(enabled: Bool) {
-    guard let garSession else { return }
-    let configuration = GARSessionConfiguration()
-    configuration.geospatialMode = .enabled
-    configuration.streetscapeGeometryMode = enabled ? .enabled : .disabled
-    var error: NSError?
-    garSession.setConfiguration(configuration, error: &error)
-    if let error {
-      print("Failed to toggle Streetscape Geometry configuration: \(error)")
-    }
-  }
+        
 
-  /// Called when the user taps on the `ARView` to place an anchor.
-  ///
-  /// - Parameter point: The point the user tapped on within the `ARView`'s coordinate space.
-  func tapPoint(_ point: CGPoint) {
-    guard let garSession, !localizationFailed,
-      anchors.count + pendingFutures.count < Constants.maxAnchorCount
-    else { return }
-
-    guard
-      let raycastQuery = arView.makeRaycastQuery(
-        from: point, allowing: .existingPlaneGeometry, alignment: .horizontal)
-    else { return }
-    if streetscapeGeometryEnabled {
-      do {
-        let results = try garSession.raycastStreetscapeGeometry(
-          origin: raycastQuery.origin, direction: raycastQuery.direction)
-        guard let result = results.first else { return }
-        let geospatialTransform = try garSession.geospatialTransform(
-          transform: result.worldTransform)
-        switch anchorType {
-        case .geospatial:
-          let anchor = try garSession.createAnchor(
-            geometry: result.streetscapeGeometry, transform: result.worldTransform)
-          // Don't save anchors on Streetscape Geometry between sessions.
-          anchors.append(anchor)
-          anchorTypes[anchor.identifier] = .geospatial
-        case .terrain:
-          addTerrainAnchor(
-            coordinate: geospatialTransform.coordinate,
-            eastUpSouthQTarget: simd_quaternion(0, 0, 0, 1), save: true)
-        case .rooftop:
-          addRooftopAnchor(
-            coordinate: geospatialTransform.coordinate,
-            eastUpSouthQTarget: simd_quaternion(0, 0, 0, 1), save: true)
+        if !showPrivacyNotice {
+            setupARSession()
         }
-
-      } catch {
-        print("Error adding anchor on StreetscapeGeometry: \(error)")
-      }
-    } else {
-      let results = arView.session.raycast(raycastQuery)
-      guard let result = results.first else { return }
-      let geospatialTransform: GARGeospatialTransform
-      do {
-        geospatialTransform = try garSession.geospatialTransform(transform: result.worldTransform)
-      } catch {
-        print("Error converting transform to Geospatial transform: \(error)")
-        return
-      }
-      switch anchorType {
-      case .geospatial:
-        addAnchor(
-          coordinate: geospatialTransform.coordinate, altitude: geospatialTransform.altitude,
-          eastUpSouthQTarget: geospatialTransform.eastUpSouthQTarget, save: true)
-      case .terrain:
-        addTerrainAnchor(
-          coordinate: geospatialTransform.coordinate,
-          eastUpSouthQTarget: geospatialTransform.eastUpSouthQTarget, save: true)
-      case .rooftop:
-        addRooftopAnchor(
-          coordinate: geospatialTransform.coordinate,
-          eastUpSouthQTarget: geospatialTransform.eastUpSouthQTarget, save: true)
-      }
     }
-  }
-
-  private func saveAnchor(
-    coordinate: CLLocationCoordinate2D, altitude: CLLocationDistance,
-    eastUpSouthQTarget: simd_quatf, anchorType: AnchorType
-  ) {
-    var savedAnchors =
-      (UserDefaults.standard.array(forKey: Constants.savedAnchorsUserDefaultsKey)
-        as? [[String: NSNumber]]) ?? []
-    var anchor = [
-      "latitude": NSNumber(floatLiteral: coordinate.latitude),
-      "longitude": NSNumber(floatLiteral: coordinate.longitude),
-      "type": NSNumber(integerLiteral: anchorType.rawValue),
-      "x": NSNumber(floatLiteral: Double(eastUpSouthQTarget.vector[0])),
-      "y": NSNumber(floatLiteral: Double(eastUpSouthQTarget.vector[1])),
-      "z": NSNumber(floatLiteral: Double(eastUpSouthQTarget.vector[2])),
-      "w": NSNumber(floatLiteral: Double(eastUpSouthQTarget.vector[3])),
-    ]
-    if anchorType == .geospatial {
-      anchor["altitude"] = NSNumber(floatLiteral: altitude)
-    }
-    savedAnchors.append(anchor)
-    UserDefaults.standard.setValue(savedAnchors, forKey: Constants.savedAnchorsUserDefaultsKey)
-  }
-
-  private func addSavedAnchors() {
-    let savedAnchors =
-      (UserDefaults.standard.array(forKey: Constants.savedAnchorsUserDefaultsKey)
-        as? [[String: NSNumber]]) ?? []
-    for anchor in savedAnchors {
-      // Ignore the stored anchors that contain heading for backwards-compatibility.
-      if anchor["heading"] != nil {
-        continue
-      }
-      let coordinate = CLLocationCoordinate2D(
-        latitude: anchor["latitude"]?.doubleValue ?? 0,
-        longitude: anchor["longitude"]?.doubleValue ?? 0)
-      let eastUpSouthQTarget = simd_quaternion(
-        anchor["x"]?.floatValue ?? 0,
-        anchor["y"]?.floatValue ?? 0,
-        anchor["z"]?.floatValue ?? 0,
-        anchor["w"]?.floatValue ?? 0)
-      guard let anchorType = AnchorType(rawValue: anchor["type"]?.intValue ?? 0) else { continue }
-      switch anchorType {
-      case .geospatial:
-        let altitude = anchor["altitude"]?.doubleValue ?? 0
-        addAnchor(
-          coordinate: coordinate, altitude: altitude, eastUpSouthQTarget: eastUpSouthQTarget,
-          save: false)
-      case .terrain:
-        addTerrainAnchor(
-          coordinate: coordinate, eastUpSouthQTarget: eastUpSouthQTarget, save: false)
-      case .rooftop:
-        addRooftopAnchor(
-          coordinate: coordinate, eastUpSouthQTarget: eastUpSouthQTarget, save: false)
-      }
-    }
-  }
-
-  private func addAnchor(
-    coordinate: CLLocationCoordinate2D, altitude: CLLocationDistance,
-    eastUpSouthQTarget: simd_quatf, save: Bool
-  ) {
-    guard let garSession else { return }
-    do {
-      let anchor = try garSession.createAnchor(
-        coordinate: coordinate, altitude: altitude, eastUpSouthQAnchor: eastUpSouthQTarget)
-      anchors.append(anchor)
-      anchorTypes[anchor.identifier] = .geospatial
-      if save {
-        saveAnchor(
-          coordinate: coordinate, altitude: altitude, eastUpSouthQTarget: eastUpSouthQTarget,
-          anchorType: .geospatial)
-      }
-    } catch {
-      print("Error adding anchor: \(error)")
-      return
-    }
-  }
-
-  private static func string(from terrainState: GARTerrainAnchorState) -> String {
-    switch terrainState {
-    case .none:
-      return "None"
-    case .success:
-      return "Success"
-    case .errorInternal:
-      return "ErrorInternal"
-    case .errorNotAuthorized:
-      return "ErrorNotAuthorized"
-    case .errorUnsupportedLocation:
-      return "ErrorUnsupportedLocation"
-    default:
-      // Not handling any deprecated values that will never be returned.
-      return "Unknown"
-    }
-  }
-
-  private func addTerrainAnchor(
-    coordinate: CLLocationCoordinate2D, eastUpSouthQTarget: simd_quatf, save: Bool
-  ) {
-    guard let garSession else { return }
-    do {
-      let futureId = UUID()
-      pendingFutures[futureId] = try garSession.createAnchorOnTerrain(
-        coordinate: coordinate, altitudeAboveTerrain: 0, eastUpSouthQAnchor: eastUpSouthQTarget
-      ) { anchor, terrainState in
-        self.pendingFutures.removeValue(forKey: futureId)
-        guard terrainState == .success, let anchor else {
-          self.resolveErrorMessage =
-            "Error resolving terrain anchor: \(GeospatialManager.string(from: terrainState))"
-          return
-        }
-        self.anchors.append(anchor)
-        self.anchorTypes[anchor.identifier] = .terrain
-        if save {
-          self.saveAnchor(
-            coordinate: coordinate, altitude: 0, eastUpSouthQTarget: eastUpSouthQTarget,
-            anchorType: .terrain)
-        }
-      }
-    } catch let error as NSError {
-      print("Error adding terrain anchor: \(error)")
-      if error.code == GARSessionError.resourceExhausted.rawValue {
-        statusLabel =
-          "Too many terrain and rooftop anchors have already been held. "
-          + "Clear all anchors to create new ones."
-      }
-    }
-  }
-
-  private static func string(from rooftopState: GARRooftopAnchorState) -> String {
-    switch rooftopState {
-    case .none:
-      return "None"
-    case .success:
-      return "Success"
-    case .errorInternal:
-      return "ErrorInternal"
-    case .errorNotAuthorized:
-      return "ErrorNotAuthorized"
-    case .errorUnsupportedLocation:
-      return "ErrorUnsupportedLocation"
-    @unknown default:
-      return "Unknown"
-    }
-  }
-
-  private func addRooftopAnchor(
-    coordinate: CLLocationCoordinate2D, eastUpSouthQTarget: simd_quatf, save: Bool
-  ) {
-    guard let garSession else { return }
-    do {
-      let futureId = UUID()
-      pendingFutures[futureId] = try garSession.createAnchorOnRooftop(
-        coordinate: coordinate, altitudeAboveRooftop: 0, eastUpSouthQAnchor: eastUpSouthQTarget
-      ) { anchor, rooftopState in
-        self.pendingFutures.removeValue(forKey: futureId)
-        guard rooftopState == .success, let anchor else {
-          self.resolveErrorMessage =
-            "Error resolving rooftop anchor: \(GeospatialManager.string(from: rooftopState))"
-          return
-        }
-        self.anchors.append(anchor)
-        self.anchorTypes[anchor.identifier] = .rooftop
-        if save {
-          self.saveAnchor(
-            coordinate: coordinate, altitude: 0, eastUpSouthQTarget: eastUpSouthQTarget,
-            anchorType: .rooftop)
-        }
-      }
-    } catch let error as NSError {
-      print("Error adding rooftop anchor: \(error)")
-      if error.code == GARSessionError.resourceExhausted.rawValue {
-        statusLabel =
-          "Too many terrain and rooftop anchors have already been held. "
-          + "Clear all anchors to create new ones."
-      }
-    }
-  }
-
-  /// Called when the user taps the button to clear all anchors. Removes all anchors from the
-  /// session and clears stored anchors.
-  func clearAllAnchors() {
-    for (_, future) in pendingFutures {
-      future.cancel()
-    }
-    pendingFutures.removeAll()
-    for anchor in anchors {
-      garSession?.remove(anchor)
-    }
-    anchors.removeAll()
-    anchorTypes.removeAll()
-    UserDefaults.standard.removeObject(forKey: Constants.savedAnchorsUserDefaultsKey)
-  }
 
   private func updateLocalizationState(_ garFrame: GARFrame) {
     guard let earth = garFrame.earth, let lastStartDate else { return }
@@ -409,11 +134,6 @@ class GeospatialManager: NSObject, ObservableObject, CLLocationManagerDelegate {
       && geospatialTransform.orientationYawAccuracy < Constants.orientationYawAccuracyLowThreshold
     {
       highAccuracy = true
-      //disable anchor
-      // if !addedSavedAnchors {
-      //   addSavedAnchors()
-      //   addedSavedAnchors = true
-      // }
     } else if now.timeIntervalSince(lastStartDate) >= Constants.localizationFailureTime {
       localizationFailed = true
     }
@@ -450,10 +170,6 @@ class GeospatialManager: NSObject, ObservableObject, CLLocationManagerDelegate {
       trackingLabel = "Not tracking."
       return
     }
-      
-      if geospatialTransform.horizontalAccuracy < 3 {
-          self.coordinate = Coordinate(latitude: geospatialTransform.coordinate.latitude, longitude: geospatialTransform.coordinate.longitude, altitude: geospatialTransform.altitude)
-      }
 
     trackingLabel = String(
       format:
@@ -469,43 +185,38 @@ class GeospatialManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         geospatialTransform.orientationYawAccuracy,
       ])
   }
+    
+    func isHorizontalAccuracyLowerLimitReached(_ garFrame: GARFrame) -> Bool {
+        guard let earth = garFrame.earth else { return false }
+        if localizationFailed {
+          return false
+        }
 
-  private func updateStatusLabelAndButtons(_ garFrame: GARFrame) {
-    if localizationFailed {
-      statusLabel = "Localization not possible.\nClose and open the app to restart."
-      tapScreenVisible = false
-      clearAnchorsVisible = false
-      anchorModeVisible = false
-      return
+        guard let geospatialTransform = earth.cameraGeospatialTransform,
+          earth.trackingState == .tracking
+        else {
+          return false
+        }
+        return geospatialTransform.horizontalAccuracy < Double(self.horizontalAccuracyLowerLimitInMeters)
     }
+    
+    func updateCoordinateAndCloseView(_ garFrame: GARFrame?) {
+        guard let earth = garFrame?.earth else { return }
 
-    if !earthTracking {
-      statusLabel = "Localizing your device to set anchor."
-      tapScreenVisible = false
-      clearAnchorsVisible = false
-      return
+        if localizationFailed {
+          return
+        }
+
+        guard let geospatialTransform = earth.cameraGeospatialTransform,
+          earth.trackingState == .tracking
+        else {
+          return
+        }
+        
+        if geospatialTransform.horizontalAccuracy < Double(self.horizontalAccuracyLowerLimitInMeters) {
+            self.coordinate = Coordinate(latitude: geospatialTransform.coordinate.latitude, longitude: geospatialTransform.coordinate.longitude, altitude: geospatialTransform.altitude)
+        }
     }
-
-    if !highAccuracy {
-      statusLabel = "Point your camera at buildings, stores, and signs near you."
-      tapScreenVisible = false
-      clearAnchorsVisible = false
-      return
-    }
-
-    let anchorCount = anchors.count + pendingFutures.count
-
-    if let resolveErrorMessage {
-      statusLabel = resolveErrorMessage
-    } else if anchors.isEmpty {
-      statusLabel = "Localization complete."
-    } else {
-      statusLabel = "Num anchors: \(anchorCount)/\(Constants.maxAnchorCount)"
-    }
-
-    clearAnchorsVisible = (anchorCount > 0)
-    tapScreenVisible = (anchorCount < Constants.maxAnchorCount)
-  }
 
   /// Feeds the latest `ARFrame` to the `GARSession` and updates the UI state.
   func update(_ frame: ARFrame) -> GARFrame? {
@@ -514,7 +225,6 @@ class GeospatialManager: NSObject, ObservableObject, CLLocationManagerDelegate {
 
     updateLocalizationState(garFrame)
     updateTrackingLabel(garFrame)
-    updateStatusLabelAndButtons(garFrame)
 
     return garFrame
   }
@@ -582,7 +292,7 @@ class GeospatialManager: NSObject, ObservableObject, CLLocationManagerDelegate {
 
     let session: GARSession
     do {
-      session = try GARSession(apiKey: Constants.apiKey, bundleIdentifier: nil)
+      session = try GARSession(apiKey: self.apiKey, bundleIdentifier: nil)
     } catch let error as NSError {
       setErrorStatus("Failed to create GARSession: \(error.code)")
       return
@@ -595,7 +305,6 @@ class GeospatialManager: NSObject, ObservableObject, CLLocationManagerDelegate {
 
     let configuration = GARSessionConfiguration()
     configuration.geospatialMode = .enabled
-    configuration.streetscapeGeometryMode = streetscapeGeometryEnabled ? .enabled : .disabled
     var error: NSError?
     session.setConfiguration(configuration, error: &error)
     if let error {

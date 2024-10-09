@@ -72,12 +72,12 @@ class GeospatialARCoreApi {
 
   static const MessageCodec<Object?> codec = _GeospatialARCoreApiCodec();
 
-  Future<Coordinate> startGeospatialARCoreSession() async {
+  Future<Coordinate> startGeospatialARCoreSession(String arg_apiKey, int arg_horizontalAccuracyLowerLimitInMeters, int arg_cameraTimeoutInSeconds, bool arg_showAdditionalDebugInfo) async {
     final BasicMessageChannel<Object?> channel = BasicMessageChannel<Object?>(
         'dev.flutter.pigeon.geospatial_arcore.GeospatialARCoreApi.startGeospatialARCoreSession', codec,
         binaryMessenger: _binaryMessenger);
     final List<Object?>? replyList =
-        await channel.send(null) as List<Object?>?;
+        await channel.send(<Object?>[arg_apiKey, arg_horizontalAccuracyLowerLimitInMeters, arg_cameraTimeoutInSeconds, arg_showAdditionalDebugInfo]) as List<Object?>?;
     if (replyList == null) {
       throw PlatformException(
         code: 'channel-error',

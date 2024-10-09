@@ -11,5 +11,6 @@ class Coordinate {
 @HostApi()
 abstract class GeospatialARCoreApi {
   @async
-  Coordinate startGeospatialARCoreSession();
+  Coordinate startGeospatialARCoreSession(String apiKey, int horizontalAccuracyLowerLimitInMeters,
+      int cameraTimeoutInSeconds, bool showAdditionalDebugInfo);
 }
